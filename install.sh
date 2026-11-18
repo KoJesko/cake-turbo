@@ -91,6 +91,15 @@ for pid in $(ps w | grep '[c]ake-autorate.sh' | awk '{print $1}'); do kill "$pid
 
 cp "$SRC/cake-turbo.init" /etc/init.d/cake-turbo
 chmod +x /etc/init.d/cake-turbo
+
+# --- LuCI page (Network -> CAKE Turbo), only if LuCI is installed ---
+if [ -d /www/luci-static/resources ] && [ -d "$SRC/luci/root" ]; then
+	cp -r "$SRC/luci/root/." /
+	chmod +x /usr/libexec/rpcd/cake-turbo
+	rm -f /tmp/luci-indexcache* /tmp/luci-modulecache/* 2>/dev/null || true
+	/etc/init.d/rpcd reload >/dev/null 2>&1 || /etc/init.d/rpcd restart
+	echo "LuCI page installed: Network -> CAKE Turbo"
+fi
 if [ "$start" = 1 ]; then
 	/etc/init.d/cake-turbo enable
 	/etc/init.d/cake-turbo restart

@@ -1,0 +1,153 @@
+#!/bin/sh
+# rpcd plugin for luci-app-cake-turbo: ubus object "cake-turbo"
+#   status   live state from /tmp/cake-turbo.status + recent log lines
+#   get      editable settings from /root/cake-turbo/config.sh
+#   set      {values:{KEY:val,...}} -> validate, write config.sh, restart if enabled
+#   service  {action:start|stop|restart|enable|disable}
+
+. /usr/share/libubox/jshn.sh
+
+CONF=/root/cake-turbo/config.sh
+STATUS=/tmp/cake-turbo.status
+INIT=/etc/init.d/cake-turbo
+KEYS="PROFILE DL_BASE_KBPS UL_BASE_KBPS DL_OVERPROV_PCT UL_OVERPROV_PCT MIN_PCT DELAY_THR_MS THROUGHPUT_LOW_PING_MS THROUGHPUT_LOW_EXTRA_MS THROUGHPUT_MAX_PING_MS THROUGHPUT_PCT"
+
+running() { pgrep -f '/root/cake-turbo/cake-turbo\.sh$' >/dev/null 2>&1; }
+enabled() { [ -x "$INIT" ] && "$INIT" enabled; }
+
+conf_get() {   # value of KEY=... (quotes and trailing comment stripped)
+	sed -n "s/^$1=\"\{0,1\}\([^\" 	#]*\).*/\1/p" "$CONF" 2>/dev/null | tail -n 1
+}
+
+conf_set() {   # conf_set KEY VALUE: replace in place, or append
+	local k=$1 v=$2
+	case $k in PROFILE|*_BASE_KBPS) v="\"$v\"" ;; esac
+	if grep -q "^$k=" "$CONF"; then
+		sed -i -E "s/^$k=(\"[^\"]*\"|[^[:space:]#]*)/$k=$v/" "$CONF"
+	else
+		printf '%s=%s\n' "$k" "$v" >> "$CONF"
+	fi
+}
+
+check() {   # check KEY VALUE -> prints error, returns 1 when invalid
+	local k=$1 v=$2 lo hi
+	if [ "$k" = PROFILE ]; then
+		case $v in balanced|throughput|extra) return 0 ;; esac
+		echo "PROFILE must be balanced, throughput or extra"; return 1
+	fi
+	if [ "$k" = THROUGHPUT_LOW_EXTRA_MS ]; then   # one decimal allowed (27.5)
+		echo "$v" | grep -qE '^[0-9]+(\.[0-9])?$' || { echo "$k must be a number like 27.5"; return 1; }
+		v=${v%%.*}
+	fi
+	case $v in ''|*[!0-9]*) echo "$k must be a whole number"; return 1 ;; esac
+	case $k in
+		*_BASE_KBPS) lo=1000 hi=10000000 ;;
+		*_OVERPROV_PCT) lo=100 hi=400 ;;
+		THROUGHPUT_LOW_PING_MS) lo=1 hi=500 ;;
+		THROUGHPUT_LOW_EXTRA_MS) lo=1 hi=500 ;;
+		THROUGHPUT_MAX_PING_MS) lo=5 hi=1000 ;;
+		THROUGHPUT_PCT) lo=5 hi=500 ;;
+		MIN_PCT) lo=10 hi=100 ;;
+		DELAY_THR_MS) lo=1 hi=500 ;;
+		*) echo "unknown setting $k"; return 1 ;;
+	esac
+	[ "$v" -ge "$lo" ] && [ "$v" -le "$hi" ] && return 0
+	echo "$k must be between $lo and $hi"; return 1
+}
+
+do_status() {   # live state + recent log lines (log via temp file: a pipe would lose the json_add calls)
+	local tmp=/tmp/cake-turbo.luci.log line
+	logread -e cake-turbo 2>/dev/null | tail -n 15 > "$tmp"
+	do_status_core
+	json_add_array log
+	while IFS= read -r line; do json_add_string "" "$line"; done < "$tmp"
+	json_close_array
+	rm -f "$tmp"
+	json_dump
+}
+
+do_status_core() {
+	local line kv k v dir
+	json_init
+	json_add_boolean running "$(running && echo 1 || echo 0)"
+	json_add_boolean enabled "$(enabled && echo 1 || echo 0)"
+	json_add_int now "$(date +%s)"
+	[ -r "$STATUS" ] || return 0
+	while IFS= read -r line; do
+		case $line in
+		updated=*)
+			for kv in $line; do
+				k=${kv%%=*}; v=${kv#*=}
+				case $k in updated) json_add_int updated "$v" ;; profile) json_add_string profile "$v" ;; esac
+			done ;;
+		bloat_window=*) json_add_string bloat "${line#bloat_window=}" ;;
+		dl\(*|ul\(*)
+			dir=${line%%(*}; v=${line#*(}
+			json_add_object "$dir"
+			json_add_string iface "${v%%)*}"
+			for kv in ${line#*: }; do
+				case $kv in *=*) k=${kv%%=*}; v=${kv#*=}; v=${v%\%}
+					case $v in ''|*[!0-9]*) ;; *) json_add_int "$k" "$v" ;; esac ;;
+				esac
+			done
+			json_close_object ;;
+		esac
+	done < "$STATUS"
+}
+
+do_get() {
+	local k
+	json_init
+	json_add_boolean exists "$([ -f "$CONF" ] && echo 1 || echo 0)"
+	for k in $KEYS; do json_add_string "$k" "$(conf_get "$k")"; done
+	json_dump
+}
+
+do_set() {
+	local input k v err tmp
+	read -r input
+	json_load "$input" 2>/dev/null
+	[ -f "$CONF" ] || { json_init; json_add_string error "$CONF missing (run install.sh)"; json_dump; return; }
+	json_select values 2>/dev/null || { json_init; json_add_string error "missing values"; json_dump; return; }
+	tmp=$(mktemp)
+	for k in $KEYS; do
+		v=; json_get_var v "$k"
+		[ -n "$v" ] || continue
+		err=$(check "$k" "$v") || { rm -f "$tmp"; json_init; json_add_string error "$err"; json_dump; return; }
+		echo "$k $v" >> "$tmp"
+	done
+	cp "$CONF" "$CONF.luci-prev"
+	while read -r k v; do conf_set "$k" "$v"; done < "$tmp"
+	rm -f "$tmp"
+	if ! bash -n "$CONF" 2>/dev/null; then
+		mv "$CONF.luci-prev" "$CONF"
+		json_init; json_add_string error "config failed a syntax check; left unchanged"; json_dump; return
+	fi
+	running && "$INIT" restart >/dev/null 2>&1
+	json_init; json_add_boolean ok 1; json_add_boolean restarted "$(running && echo 1 || echo 0)"; json_dump
+}
+
+do_service() {
+	local input action
+	read -r input
+	json_load "$input" 2>/dev/null
+	json_get_var action action
+	case $action in
+		start|stop|restart|enable|disable) "$INIT" "$action" >/dev/null 2>&1 ;;
+		*) json_init; json_add_string error "bad action"; json_dump; return ;;
+	esac
+	json_init; json_add_boolean ok 1; json_dump
+}
+
+case $1 in
+list)
+	echo '{"status":{},"get":{},"set":{"values":{}},"service":{"action":"str"}}' ;;
+call)
+	case $2 in
+		status) do_status ;;
+		get) do_get ;;
+		set) do_set ;;
+		service) do_service ;;
+		*) echo '{"error":"unknown method"}' ;;
+	esac ;;
+esac

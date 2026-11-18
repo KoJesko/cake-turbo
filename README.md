@@ -21,10 +21,16 @@ How it differs from stock cake-autorate:
 | `PROFILE` | under load | floor | reacts to |
 |---|---|---|---|
 | `balanced` (default) | the knobs in `config.sh` (+15 ms RTT threshold) | `MIN_PCT` of plan | RTT rise or probe loss |
-| `throughput` | ping stays within ~1.5x idle ping | plan rate | RTT above baseline + `THROUGHPUT_DELAY_PCT`% (per reflector), or loss |
-| `extra` | ping ignored; runs at the ceiling when busy | plan rate | probe loss only (ISP buffer overflowing) |
+| `throughput` | idle ping < 30 ms may rise 27.5 ms, capped at 50 ms; higher pings may rise 1.5x | plan rate (if overprovisioned) | RTT nearing that budget (per reflector), or loss |
+| `extra` | ping ignored; runs at the ceiling when busy | plan rate (if overprovisioned) | probe loss only (ISP buffer overflowing) |
 
-`throughput` and `extra` override `MIN_PCT`, the bloat threshold and the cut/probe knobs.
+The `throughput` budget is set by `THROUGHPUT_LOW_PING_MS`, `THROUGHPUT_LOW_EXTRA_MS`,
+`THROUGHPUT_MAX_PING_MS` and `THROUGHPUT_PCT`; it reacts at 55% of the budget so the
+overshoot after a cut stays inside it.
+
+`throughput` and `extra` floor each overprovisioned direction at the plan rate and override
+the bloat threshold and the cut/probe knobs. A direction capped at 100% (e.g. upload with
+`UL_OVERPROV_PCT=100`) keeps its `MIN_PCT` floor so it can still back off.
 For any other mix, stay on `balanced` and set the knobs yourself; `DELAY_THR_PCT`
 (relative threshold) and `IGNORE_DELAY=1` work there too.
 
@@ -51,6 +57,14 @@ bash /root/cake-turbo/cake-turbo.sh status   # live rates / learned-good / load
 logread -e cake-turbo                        # once-a-minute summaries when it cut
 vi /root/cake-turbo/config.sh && /etc/init.d/cake-turbo restart
 ```
+
+## LuCI
+
+If LuCI is installed, `install.sh` adds **Network → CAKE Turbo**: live rates (refreshed every 2 s),
+profile and plan/ceiling/budget settings (saved to `/root/cake-turbo/config.sh`, then the
+service restarts), start/stop/boot buttons and the recent log. It is a JS view plus an rpcd
+plugin (`/usr/libexec/rpcd/cake-turbo`, ubus object `cake-turbo`). A later
+`SITE_CONFIG=... ./deploy.sh` overwrites settings changed in LuCI.
 
 ## Test without a router
 

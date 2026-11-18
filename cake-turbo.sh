@@ -42,26 +42,31 @@ die() { log "fatal: $*"; exit 1; }
 
 # PROFILE trades ping for speed; it overrides the knobs it sets.
 #   balanced    the values in config.sh
-#   throughput  loaded ping stays within ~1.5x idle ping (DELAY_THR_PCT), cuts
-#               gently, recovers fast, never shapes below the plan rate
+#   throughput  per-reflector ping budget: idle < THROUGHPUT_LOW_PING_MS may
+#               rise THROUGHPUT_LOW_EXTRA_MS but stay <= THROUGHPUT_MAX_PING_MS;
+#               higher idle pings may rise THROUGHPUT_PCT% (1.5x). Cuts gently,
+#               recovers fast, never shapes an overprovisioned direction below plan
 #   extra       ignores ping completely: runs at the ceiling whenever busy and
 #               only backs off on probe loss (ISP buffer overflowing)
 PROFILE=${PROFILE:-balanced}
 case $PROFILE in
 	balanced) ;;
 	throughput)
-		MIN_PCT=100 HIGH_LOAD_PCT=70
-		DELAY_THR_PCT=${THROUGHPUT_DELAY_PCT:-20}
+		FLOOR_AT_PLAN=1 HIGH_LOAD_PCT=70
+		BUDGET_MODE=1
 		CUT_PCT=95 GOOD_AFTER_CUT_PCT=97
 		PROBE_SLOW_PCT=2 SLOW_PROBE_S=10 ;;
 	extra)
-		MIN_PCT=100 HIGH_LOAD_PCT=60 IGNORE_DELAY=1
+		FLOOR_AT_PLAN=1 HIGH_LOAD_PCT=60 IGNORE_DELAY=1
 		PROBE_FAST_PCT=8 CUT_PCT=95 GOOD_AFTER_CUT_PCT=97
 		PROBE_SLOW_PCT=4 SLOW_PROBE_S=5 ;;
 	*) die "PROFILE must be balanced, throughput or extra (got '$PROFILE')" ;;
 esac
 DELAY_THR_PCT=${DELAY_THR_PCT:-0}   # >0: bloat = RTT above baseline * (1 + PCT/100), per reflector
+BUDGET_MODE=${BUDGET_MODE:-0}       # 1: bloat = RTT above the throughput ping budget (below)
 IGNORE_DELAY=${IGNORE_DELAY:-0}     # 1: RTT never counts as bloat, only timeouts do
+FLOOR_AT_PLAN=${FLOOR_AT_PLAN:-0}   # 1: an overprovisioned direction never goes below plan
+                                    #    (one capped at 100% keeps MIN_PCT so it can still back off)
 
 for v in DL_IF UL_IF; do [[ -n ${!v} ]] || die "$v not set in $CONFIG"; done
 for v in DL_BASE_KBPS UL_BASE_KBPS; do
@@ -80,6 +85,17 @@ LOG_EVERY_US=$(( LOG_EVERY_S * 1000000 ))
 REFLECTOR_ALIVE_US=2000000
 WIN_MASK=$(( (1 << BLOAT_WINDOW) - 1 ))
 
+ms_to_x() {   # "27.5" ms -> RTT units used below (microseconds * 1000)
+	local v=$1 i f=""
+	i=${v%%.*}; [[ $v == *.* ]] && f=${v#*.}; f="${f}000"
+	REPLY=$(( (10#${i:-0} * 1000 + 10#${f:0:3}) * 1000 ))
+}
+ms_to_x "${THROUGHPUT_LOW_PING_MS:-30}";    LOW_PING_X=$REPLY
+ms_to_x "${THROUGHPUT_LOW_EXTRA_MS:-27.5}"; LOW_EXTRA_X=$REPLY
+ms_to_x "${THROUGHPUT_MAX_PING_MS:-50}";    MAX_PING_X=$REPLY
+TP_PCT=${THROUGHPUT_PCT:-50}
+TP_TRIGGER_PCT=${THROUGHPUT_TRIGGER_PCT:-55}   # react at this share of the budget (overshoot headroom)
+
 NAME=(dl ul)
 IFACE=("$DL_IF" "$UL_IF")
 BASE=("$DL_BASE_KBPS" "$UL_BASE_KBPS")
@@ -87,6 +103,7 @@ OVERPROV=("${DL_OVERPROV_PCT:-${OVERPROV_PCT:-200}}" "${UL_OVERPROV_PCT:-${OVERP
 declare -a MIN MAX RATE GOOD APPLIED ACH LOAD PREV_BYTES LAST_CUT CUTS
 for d in 0 1; do
 	MIN[d]=$(( BASE[d] * MIN_PCT / 100 ))
+	(( FLOOR_AT_PLAN && OVERPROV[d] > 100 )) && MIN[d]=${BASE[d]}
 	MAX[d]=$(( BASE[d] * OVERPROV[d] / 100 ))
 	RATE[d]=${BASE[d]}; GOOD[d]=${BASE[d]}
 	APPLIED[d]=0; ACH[d]=0; LOAD[d]=0; LAST_CUT[d]=0; CUTS[d]=0
@@ -203,7 +220,14 @@ handle_line() {
 		rx=$(( us * 1000 ))
 		bx=${BASELINE_X[$ip]:-$rx}
 		LAST_SAMPLE=$NOW; LAST_OK[$ip]=$NOW
-		if (( DELAY_THR_PCT > 0 )); then thr=$(( bx * DELAY_THR_PCT / 100 ))
+		if (( BUDGET_MODE )); then
+			if (( bx < LOW_PING_X )); then
+				thr=$LOW_EXTRA_X; (( MAX_PING_X - bx < thr )) && thr=$(( MAX_PING_X - bx ))
+			else
+				thr=$(( bx * TP_PCT / 100 ))
+			fi
+			thr=$(( thr * TP_TRIGGER_PCT / 100 ))
+		elif (( DELAY_THR_PCT > 0 )); then thr=$(( bx * DELAY_THR_PCT / 100 ))
 		else thr=$(( DELAY_THR_US * 1000 )); fi
 		if (( ! IGNORE_DELAY && rx - bx > thr )); then
 			push_sample 1

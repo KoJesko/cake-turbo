@@ -1,0 +1,15 @@
+{
+	"luci-app-cake-turbo": {
+		"description": "Grant access to CAKE Turbo status and settings",
+		"read": {
+			"ubus": {
+				"cake-turbo": [ "status", "get" ]
+			}
+		},
+		"write": {
+			"ubus": {
+				"cake-turbo": [ "set", "service" ]
+			}
+		}
+	}
+}

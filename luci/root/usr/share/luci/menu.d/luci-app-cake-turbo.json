@@ -1,0 +1,13 @@
+{
+	"admin/network/cake-turbo": {
+		"title": "CAKE Turbo",
+		"order": 61,
+		"action": {
+			"type": "view",
+			"path": "cake-turbo/status"
+		},
+		"depends": {
+			"acl": [ "luci-app-cake-turbo" ]
+		}
+	}
+}

@@ -15,8 +15,14 @@ MIN_PCT=60             # floor   = base * 60%   (fixed link: never needs to go l
 PROFILE="balanced"     # balanced   = the values below
                        # throughput = loaded ping <= ~1.5x idle ping, never below plan
                        # extra      = ignore ping, run at the ceiling, back off only on loss
-                       # (throughput/extra override MIN_PCT, the bloat and cut/probe knobs)
-THROUGHPUT_DELAY_PCT=20 # throughput: RTT this % over idle counts as bloat (20 -> peak ~1.4x)
+                       # (throughput/extra floor overprovisioned directions at plan and
+                       #  override the bloat and cut/probe knobs; MIN_PCT still applies
+                       #  to a direction capped at 100%)
+# throughput ping budget, per reflector:
+THROUGHPUT_LOW_PING_MS=30    # idle ping below this...
+THROUGHPUT_LOW_EXTRA_MS=27.5 # ...may rise this much under load...
+THROUGHPUT_MAX_PING_MS=50    # ...but never past this
+THROUGHPUT_PCT=50            # idle ping >= LOW_PING: may rise this % (50 = 1.5x)
 
 # --- latency probe ----------------------------------------------------------
 REFLECTORS="1.1.1.1 1.0.0.1 8.8.8.8 8.8.4.4 9.9.9.9 149.112.112.112"

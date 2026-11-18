@@ -9,6 +9,7 @@ host=${1:?usage: deploy.sh root@<router-ip> [--rollback]}
 here=$(cd "$(dirname "$0")" && pwd)
 stage=$(mktemp -d); trap 'rm -rf "$stage"' EXIT
 cp "$here"/{cake-turbo.sh,config.sh,cake-turbo.init,install.sh} "$stage/"
+cp -r "$here/luci" "$stage/"
 if [[ -n ${SITE_CONFIG:-} ]]; then
 	bash -n "$SITE_CONFIG"
 	cp "$SITE_CONFIG" "$stage/config.site.sh"
