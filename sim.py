@@ -108,6 +108,7 @@ def run():
     cfg = open(f"{here}/config.sh").read()
     cfg = cfg.replace('DL_BASE_KBPS=""', f'DL_BASE_KBPS="{BASE["dl"]}"')
     cfg = cfg.replace('UL_BASE_KBPS=""', f'UL_BASE_KBPS="{BASE["ul"]}"')
+    cfg = cfg.replace('DL_IF=""', 'DL_IF="ifb4wan"').replace('UL_IF=""', 'UL_IF="wan"')
     cfg += "\n" + E("SIM_CFG", "").replace(";", "\n") + "\n"
     open(f"{sim}/config.sh", "w").write(cfg)
     open(f"{sim}/t0", "w").write(str(time.time()))

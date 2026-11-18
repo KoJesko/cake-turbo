@@ -35,39 +35,51 @@ mkdir -p "$DEST"
 cp "$SRC/cake-turbo.sh" "$DEST/"
 chmod +x "$DEST/cake-turbo.sh"
 
-# --- config: a pushed site config wins; else a fresh install imports ---
+# --- config ---
+# A pushed site config wins, else an existing config is kept, else the template.
+# Any of DL_IF / UL_IF / DL_BASE_KBPS / UL_BASE_KBPS left "" gets filled from the
+# previous config (.bak), then from cake-autorate, then from SQM.
 if [ -f "$SRC/config.site.sh" ]; then
 	[ -f "$DEST/config.sh" ] && cp "$DEST/config.sh" "$DEST/config.sh.bak"
 	cp "$SRC/config.site.sh" "$DEST/config.sh"
 	echo "installed pushed site config"
 elif [ ! -f "$DEST/config.sh" ]; then
 	cp "$SRC/config.sh" "$DEST/config.sh"
-	vals=""
+fi
+
+fill() {   # fill <VAR> <value>: only replaces VAR=""
+	[ -n "$2" ] && grep -q "^$1=\"\"" "$DEST/config.sh" || return 0
+	sed -i "s|^$1=\"\"|$1=\"$2\"|" "$DEST/config.sh"
+	echo "  $1=$2  ($src)"
+}
+fill_all() { fill DL_IF "${1:-}"; fill UL_IF "${2:-}"; fill DL_BASE_KBPS "${3:-}"; fill UL_BASE_KBPS "${4:-}"; }
+blanks() { grep -q '^\(DL_IF\|UL_IF\|DL_BASE_KBPS\|UL_BASE_KBPS\)=""' "$DEST/config.sh"; }
+
+if blanks && [ -f "$DEST/config.sh.bak" ]; then
+	src="previous config"
+	fill_all $(sh -c '. "$1"; echo "$DL_IF $UL_IF $DL_BASE_KBPS $UL_BASE_KBPS"' _ "$DEST/config.sh.bak")
+fi
+if blanks; then
 	for f in /root/cake-autorate/config.primary.sh /root/cake-autorate/config.*.sh; do
 		[ -f "$f" ] || continue
-		vals=$(bash -c '. "$1" >/dev/null 2>&1; echo "$dl_if $ul_if $base_dl_shaper_rate_kbps $base_ul_shaper_rate_kbps"' _ "$f")
-		echo "imported from $f"
+		src=$f
+		fill_all $(bash -c '. "$1" >/dev/null 2>&1; echo "$dl_if $ul_if $base_dl_shaper_rate_kbps $base_ul_shaper_rate_kbps"' _ "$f")
 		break
 	done
-	if [ -z "$(echo "$vals" | tr -d ' ')" ] && have uci; then
-		wan=$(uci -q get sqm.@queue[0].interface || true)
-		if [ -n "$wan" ]; then
-			vals="ifb4$wan $wan $(uci -q get sqm.@queue[0].download) $(uci -q get sqm.@queue[0].upload)"
-			echo "imported from SQM (sqm.@queue[0])"
-		fi
+fi
+if blanks && have uci; then
+	wan=$(uci -q get sqm.@queue[0].interface || true)
+	if [ -n "$wan" ]; then
+		src="SQM sqm.@queue[0]"
+		fill_all "ifb4$wan" "$wan" "$(uci -q get sqm.@queue[0].download)" "$(uci -q get sqm.@queue[0].upload)"
 	fi
-	set -- $vals
-	[ -n "${1:-}" ] && sed -i "s|^DL_IF=\"[^\"]*\"|DL_IF=\"$1\"|" "$DEST/config.sh"
-	[ -n "${2:-}" ] && sed -i "s|^UL_IF=\"[^\"]*\"|UL_IF=\"$2\"|" "$DEST/config.sh"
-	[ -n "${3:-}" ] && sed -i "s|^DL_BASE_KBPS=\"[^\"]*\"|DL_BASE_KBPS=\"$3\"|" "$DEST/config.sh"
-	[ -n "${4:-}" ] && sed -i "s|^UL_BASE_KBPS=\"[^\"]*\"|UL_BASE_KBPS=\"$4\"|" "$DEST/config.sh"
 fi
 
 echo "--- $DEST/config.sh (link section) ---"
 sed -n '/^DL_IF=/,/^MIN_PCT=/p' "$DEST/config.sh"
 . "$DEST/config.sh"
-if [ -z "$DL_BASE_KBPS" ] || [ -z "$UL_BASE_KBPS" ]; then
-	echo "plan rates not set: edit $DEST/config.sh, then: /etc/init.d/cake-turbo enable && /etc/init.d/cake-turbo start" >&2
+if blanks; then
+	echo "interfaces / plan rates still blank: edit $DEST/config.sh, then: /etc/init.d/cake-turbo enable && /etc/init.d/cake-turbo start" >&2
 	start=0
 else
 	start=1

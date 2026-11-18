@@ -1,9 +1,9 @@
 # cake-turbo config — bash syntax, sourced by cake-turbo.sh. Rates are kbit/s.
-# install.sh fills the first block in from the existing cake-autorate / SQM config.
+# install.sh fills any "" in the first block from the old config, cake-autorate or SQM.
 
 # --- link -------------------------------------------------------------------
-DL_IF="ifb4wan"        # interface carrying the DOWNLOAD cake qdisc (SQM: ifb4<wan>)
-UL_IF="wan"            # interface carrying the UPLOAD cake qdisc
+DL_IF=""               # DOWNLOAD cake iface (SQM: ifb4<wan>); "" = import on install
+UL_IF=""               # UPLOAD cake iface; "" = import on install
 DL_BASE_KBPS=""        # plan download rate (what the ISP sells)
 UL_BASE_KBPS=""        # plan upload rate
 

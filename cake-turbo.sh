@@ -40,6 +40,7 @@ die() { log "fatal: $*"; exit 1; }
 # shellcheck source=config.sh
 . "$CONFIG"
 
+for v in DL_IF UL_IF; do [[ -n ${!v} ]] || die "$v not set in $CONFIG"; done
 for v in DL_BASE_KBPS UL_BASE_KBPS; do
 	[[ ${!v} =~ ^[0-9]+$ ]] && (( ${!v} > 0 )) || die "$v not set in $CONFIG"
 done
