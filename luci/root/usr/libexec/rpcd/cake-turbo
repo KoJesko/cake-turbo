@@ -10,7 +10,7 @@
 CONF=/root/cake-turbo/config.sh
 STATUS=/tmp/cake-turbo.status
 INIT=/etc/init.d/cake-turbo
-KEYS="PROFILE DL_BASE_KBPS UL_BASE_KBPS DL_OVERPROV_PCT UL_OVERPROV_PCT MIN_PCT DELAY_THR_MS THROUGHPUT_LOW_PING_MS THROUGHPUT_LOW_EXTRA_MS THROUGHPUT_MAX_PING_MS THROUGHPUT_PCT FIBRE_MAX_PING_MS"
+KEYS="PROFILE DL_BASE_KBPS UL_BASE_KBPS DL_OVERPROV_PCT UL_OVERPROV_PCT MIN_PCT DELAY_THR_MS THROUGHPUT_LOW_PING_MS THROUGHPUT_LOW_EXTRA_MS THROUGHPUT_MAX_PING_MS THROUGHPUT_PCT FIBRE_LOW_EXTRA_MS FIBRE_MAX_PING_MS"
 
 running() { pgrep -f '/root/cake-turbo/cake-turbo\.sh$' >/dev/null 2>&1; }
 enabled() { [ -x "$INIT" ] && "$INIT" enabled; }
@@ -35,8 +35,8 @@ check() {   # check KEY VALUE -> prints error, returns 1 when invalid
 		case $v in balanced|throughput|fibre-throughput|extra) return 0 ;; esac
 		echo "PROFILE must be balanced, throughput, fibre-throughput or extra"; return 1
 	fi
-	if [ "$k" = THROUGHPUT_LOW_EXTRA_MS ]; then   # one decimal allowed (27.5)
-		echo "$v" | grep -qE '^[0-9]+(\.[0-9])?$' || { echo "$k must be a number like 27.5"; return 1; }
+	if [ "$k" = THROUGHPUT_LOW_EXTRA_MS ] || [ "$k" = FIBRE_LOW_EXTRA_MS ]; then   # up to 2 decimals (13.75)
+		echo "$v" | grep -qE '^[0-9]+(\.[0-9]{1,2})?$' || { echo "$k must be a number like 27.5"; return 1; }
 		v=${v%%.*}
 	fi
 	case $v in ''|*[!0-9]*) echo "$k must be a whole number"; return 1 ;; esac
@@ -44,7 +44,7 @@ check() {   # check KEY VALUE -> prints error, returns 1 when invalid
 		*_BASE_KBPS) lo=1000 hi=10000000 ;;
 		*_OVERPROV_PCT) lo=100 hi=400 ;;
 		THROUGHPUT_LOW_PING_MS) lo=1 hi=500 ;;
-		THROUGHPUT_LOW_EXTRA_MS) lo=1 hi=500 ;;
+		THROUGHPUT_LOW_EXTRA_MS|FIBRE_LOW_EXTRA_MS) lo=1 hi=500 ;;
 		THROUGHPUT_MAX_PING_MS|FIBRE_MAX_PING_MS) lo=5 hi=1000 ;;
 		THROUGHPUT_PCT) lo=5 hi=500 ;;
 		MIN_PCT) lo=10 hi=100 ;;

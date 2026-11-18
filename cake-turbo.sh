@@ -46,7 +46,8 @@ die() { log "fatal: $*"; exit 1; }
 #               rise THROUGHPUT_LOW_EXTRA_MS but stay <= THROUGHPUT_MAX_PING_MS;
 #               higher idle pings may rise THROUGHPUT_PCT% (1.5x). Cuts gently,
 #               recovers fast, never shapes an overprovisioned direction below plan
-#   fibre-throughput  same as throughput, but the ping cap is FIBRE_MAX_PING_MS (20)
+#   fibre-throughput  same as throughput, but half the allowance (FIBRE_LOW_EXTRA_MS,
+#                     13.75) and a 20 ms cap (FIBRE_MAX_PING_MS)
 #   extra       ignores ping completely: runs at the ceiling whenever busy and
 #               only backs off on probe loss (ISP buffer overflowing)
 PROFILE=${PROFILE:-balanced}
@@ -55,6 +56,7 @@ case $PROFILE in
 	throughput|fibre-throughput)
 		if [[ $PROFILE == fibre-throughput ]]; then   # tighter cap -> react earlier
 			THROUGHPUT_MAX_PING_MS=${FIBRE_MAX_PING_MS:-20}
+			THROUGHPUT_LOW_EXTRA_MS=${FIBRE_LOW_EXTRA_MS:-13.75}
 			THROUGHPUT_TRIGGER_PCT=${FIBRE_TRIGGER_PCT:-35}
 		fi
 		FLOOR_AT_PLAN=1 HIGH_LOAD_PCT=70

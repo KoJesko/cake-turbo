@@ -12,7 +12,7 @@ var callService = rpc.declare({ object: 'cake-turbo', method: 'service', params:
 var PROFILES = {
 	balanced: _('Balanced: the latency knobs in config.sh (+15 ms threshold, floor at MIN_PCT)'),
 	throughput: _('Throughput: ping under 30 ms may rise 27.5 ms (max 50 ms), higher pings 1.5x; never below plan when overprovisioned'),
-	'fibre-throughput': _('Fibre throughput: like Throughput, but loaded ping is capped at 20 ms'),
+	'fibre-throughput': _('Fibre throughput: like Throughput with half the allowance (13.75 ms) and loaded ping capped at 20 ms'),
 	extra: _('Extra: ignores ping, runs at the ceiling when busy, backs off only on packet loss')
 };
 
@@ -25,7 +25,8 @@ var FIELDS = [
 	[ 'MIN_PCT', _('Floor'), '% of plan', _('Throughput/Extra floor overprovisioned directions at 100%'), null ],
 	[ 'DELAY_THR_MS', _('Bloat threshold'), 'ms', _('RTT rise that counts as bufferbloat'), [ 'balanced' ] ],
 	[ 'THROUGHPUT_LOW_PING_MS', _('Low-ping limit'), 'ms', _('Idle pings below this get the fixed allowance'), [ 'throughput', 'fibre-throughput' ] ],
-	[ 'THROUGHPUT_LOW_EXTRA_MS', _('Low-ping allowance'), 'ms', _('Extra ping allowed under load'), [ 'throughput', 'fibre-throughput' ] ],
+	[ 'THROUGHPUT_LOW_EXTRA_MS', _('Low-ping allowance'), 'ms', _('Extra ping allowed under load'), [ 'throughput' ] ],
+	[ 'FIBRE_LOW_EXTRA_MS', _('Low-ping allowance'), 'ms', _('Extra ping allowed under load'), [ 'fibre-throughput' ] ],
 	[ 'THROUGHPUT_MAX_PING_MS', _('Ping cap'), 'ms', _('Loaded ping never above this (low pings)'), [ 'throughput' ] ],
 	[ 'FIBRE_MAX_PING_MS', _('Ping cap'), 'ms', _('Loaded ping never above this (low pings)'), [ 'fibre-throughput' ] ],
 	[ 'THROUGHPUT_PCT', _('High-ping allowance'), '%', _('50 = loaded ping up to 1.5x idle'), [ 'throughput', 'fibre-throughput' ] ]

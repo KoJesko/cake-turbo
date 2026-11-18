@@ -15,7 +15,8 @@ MIN_PCT=60             # floor   = base * 60%   (fixed link: never needs to go l
 PROFILE="balanced"     # balanced   = the values below
                        # throughput = idle ping < 30 ms may rise 27.5 ms (cap 50 ms), else 1.5x;
                        #              never below plan when overprovisioned
-                       # fibre-throughput = throughput with a 20 ms cap (FIBRE_MAX_PING_MS)
+                       # fibre-throughput = throughput with half the allowance (13.75 ms)
+                       #              and a 20 ms cap
                        # extra      = ignore ping, run at the ceiling, back off only on loss
                        # (throughput/extra floor overprovisioned directions at plan and
                        #  override the bloat and cut/probe knobs; MIN_PCT still applies
@@ -26,6 +27,7 @@ THROUGHPUT_LOW_EXTRA_MS=27.5 # ...may rise this much under load...
 THROUGHPUT_MAX_PING_MS=50    # ...but never past this
 THROUGHPUT_PCT=50            # idle ping >= LOW_PING: may rise this % (50 = 1.5x);
                              # also the minimum allowance when the cap is tighter
+FIBRE_LOW_EXTRA_MS=13.75     # fibre-throughput: allowance instead of THROUGHPUT_LOW_EXTRA_MS
 FIBRE_MAX_PING_MS=20         # fibre-throughput: cap instead of THROUGHPUT_MAX_PING_MS
 
 # --- latency probe ----------------------------------------------------------
