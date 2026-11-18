@@ -22,11 +22,13 @@ How it differs from stock cake-autorate:
 |---|---|---|---|
 | `balanced` (default) | the knobs in `config.sh` (+15 ms RTT threshold) | `MIN_PCT` of plan | RTT rise or probe loss |
 | `throughput` | idle ping < 30 ms may rise 27.5 ms, capped at 50 ms; higher pings may rise 1.5x | plan rate (if overprovisioned) | RTT nearing that budget (per reflector), or loss |
+| `fibre-throughput` | same as `throughput`, but loaded ping capped at 20 ms (`FIBRE_MAX_PING_MS`); reacts at 35% of the budget | plan rate (if overprovisioned) | RTT nearing that budget, or loss |
 | `extra` | ping ignored; runs at the ceiling when busy | plan rate (if overprovisioned) | probe loss only (ISP buffer overflowing) |
 
 The `throughput` budget is set by `THROUGHPUT_LOW_PING_MS`, `THROUGHPUT_LOW_EXTRA_MS`,
 `THROUGHPUT_MAX_PING_MS` and `THROUGHPUT_PCT`; it reacts at 55% of the budget so the
-overshoot after a cut stays inside it.
+overshoot after a cut stays inside it. Where the cap leaves less room than
+`THROUGHPUT_PCT` (an idle ping already near the cap), the % rule applies instead.
 
 `throughput` and `extra` floor each overprovisioned direction at the plan rate and override
 the bloat threshold and the cut/probe knobs. A direction capped at 100% (e.g. upload with

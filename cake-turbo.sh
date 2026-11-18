@@ -46,12 +46,17 @@ die() { log "fatal: $*"; exit 1; }
 #               rise THROUGHPUT_LOW_EXTRA_MS but stay <= THROUGHPUT_MAX_PING_MS;
 #               higher idle pings may rise THROUGHPUT_PCT% (1.5x). Cuts gently,
 #               recovers fast, never shapes an overprovisioned direction below plan
+#   fibre-throughput  same as throughput, but the ping cap is FIBRE_MAX_PING_MS (20)
 #   extra       ignores ping completely: runs at the ceiling whenever busy and
 #               only backs off on probe loss (ISP buffer overflowing)
 PROFILE=${PROFILE:-balanced}
 case $PROFILE in
 	balanced) ;;
-	throughput)
+	throughput|fibre-throughput)
+		if [[ $PROFILE == fibre-throughput ]]; then   # tighter cap -> react earlier
+			THROUGHPUT_MAX_PING_MS=${FIBRE_MAX_PING_MS:-20}
+			THROUGHPUT_TRIGGER_PCT=${FIBRE_TRIGGER_PCT:-35}
+		fi
 		FLOOR_AT_PLAN=1 HIGH_LOAD_PCT=70
 		BUDGET_MODE=1
 		CUT_PCT=95 GOOD_AFTER_CUT_PCT=97
@@ -60,7 +65,7 @@ case $PROFILE in
 		FLOOR_AT_PLAN=1 HIGH_LOAD_PCT=60 IGNORE_DELAY=1
 		PROBE_FAST_PCT=8 CUT_PCT=95 GOOD_AFTER_CUT_PCT=97
 		PROBE_SLOW_PCT=4 SLOW_PROBE_S=5 ;;
-	*) die "PROFILE must be balanced, throughput or extra (got '$PROFILE')" ;;
+	*) die "PROFILE must be balanced, throughput, fibre-throughput or extra (got '$PROFILE')" ;;
 esac
 DELAY_THR_PCT=${DELAY_THR_PCT:-0}   # >0: bloat = RTT above baseline * (1 + PCT/100), per reflector
 BUDGET_MODE=${BUDGET_MODE:-0}       # 1: bloat = RTT above the throughput ping budget (below)
@@ -212,7 +217,7 @@ RE_REPLY='^([0-9.]+) +: \[[0-9]+\], [0-9]+ bytes, ([0-9]+)\.?([0-9]*) ms'
 RE_TIMEOUT='^([0-9.]+) +: \[[0-9]+\], timed out'
 
 handle_line() {
-	local ip us frac rx bx thr
+	local ip us frac rx bx thr b
 	if [[ $1 =~ $RE_REPLY ]]; then
 		ip=${BASH_REMATCH[1]}
 		frac="${BASH_REMATCH[3]}000"
@@ -221,10 +226,11 @@ handle_line() {
 		bx=${BASELINE_X[$ip]:-$rx}
 		LAST_SAMPLE=$NOW; LAST_OK[$ip]=$NOW
 		if (( BUDGET_MODE )); then
-			if (( bx < LOW_PING_X )); then
-				thr=$LOW_EXTRA_X; (( MAX_PING_X - bx < thr )) && thr=$(( MAX_PING_X - bx ))
-			else
-				thr=$(( bx * TP_PCT / 100 ))
+			thr=$(( bx * TP_PCT / 100 ))   # high idle ping: may rise TP_PCT%
+			if (( bx < LOW_PING_X )); then   # low idle ping: fixed allowance up to the cap,
+				b=$LOW_EXTRA_X               # but never stricter than the % rule
+				(( MAX_PING_X - bx < b )) && b=$(( MAX_PING_X - bx ))
+				(( b > thr )) && thr=$b
 			fi
 			thr=$(( thr * TP_TRIGGER_PCT / 100 ))
 		elif (( DELAY_THR_PCT > 0 )); then thr=$(( bx * DELAY_THR_PCT / 100 ))
