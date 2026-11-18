@@ -11,6 +11,13 @@ DL_OVERPROV_PCT=200    # download ceiling = base * 200% -> up to 2x the plan
 UL_OVERPROV_PCT=200    # upload ceiling; set 100 if the ISP gives exactly the plan
 MIN_PCT=60             # floor   = base * 60%   (fixed link: never needs to go lower)
 
+# --- profile ----------------------------------------------------------------
+PROFILE="balanced"     # balanced   = the values below
+                       # throughput = loaded ping <= ~1.5x idle ping, never below plan
+                       # extra      = ignore ping, run at the ceiling, back off only on loss
+                       # (throughput/extra override MIN_PCT, the bloat and cut/probe knobs)
+THROUGHPUT_DELAY_PCT=20 # throughput: RTT this % over idle counts as bloat (20 -> peak ~1.4x)
+
 # --- latency probe ----------------------------------------------------------
 REFLECTORS="1.1.1.1 1.0.0.1 8.8.8.8 8.8.4.4 9.9.9.9 149.112.112.112"
 PING_PERIOD_MS=300     # per reflector; 6 reflectors -> 20 RTT samples/s

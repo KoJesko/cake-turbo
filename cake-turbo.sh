@@ -40,6 +40,29 @@ die() { log "fatal: $*"; exit 1; }
 # shellcheck source=config.sh
 . "$CONFIG"
 
+# PROFILE trades ping for speed; it overrides the knobs it sets.
+#   balanced    the values in config.sh
+#   throughput  loaded ping stays within ~1.5x idle ping (DELAY_THR_PCT), cuts
+#               gently, recovers fast, never shapes below the plan rate
+#   extra       ignores ping completely: runs at the ceiling whenever busy and
+#               only backs off on probe loss (ISP buffer overflowing)
+PROFILE=${PROFILE:-balanced}
+case $PROFILE in
+	balanced) ;;
+	throughput)
+		MIN_PCT=100 HIGH_LOAD_PCT=70
+		DELAY_THR_PCT=${THROUGHPUT_DELAY_PCT:-20}
+		CUT_PCT=95 GOOD_AFTER_CUT_PCT=97
+		PROBE_SLOW_PCT=2 SLOW_PROBE_S=10 ;;
+	extra)
+		MIN_PCT=100 HIGH_LOAD_PCT=60 IGNORE_DELAY=1
+		PROBE_FAST_PCT=8 CUT_PCT=95 GOOD_AFTER_CUT_PCT=97
+		PROBE_SLOW_PCT=4 SLOW_PROBE_S=5 ;;
+	*) die "PROFILE must be balanced, throughput or extra (got '$PROFILE')" ;;
+esac
+DELAY_THR_PCT=${DELAY_THR_PCT:-0}   # >0: bloat = RTT above baseline * (1 + PCT/100), per reflector
+IGNORE_DELAY=${IGNORE_DELAY:-0}     # 1: RTT never counts as bloat, only timeouts do
+
 for v in DL_IF UL_IF; do [[ -n ${!v} ]] || die "$v not set in $CONFIG"; done
 for v in DL_BASE_KBPS UL_BASE_KBPS; do
 	[[ ${!v} =~ ^[0-9]+$ ]] && (( ${!v} > 0 )) || die "$v not set in $CONFIG"
@@ -172,7 +195,7 @@ RE_REPLY='^([0-9.]+) +: \[[0-9]+\], [0-9]+ bytes, ([0-9]+)\.?([0-9]*) ms'
 RE_TIMEOUT='^([0-9.]+) +: \[[0-9]+\], timed out'
 
 handle_line() {
-	local ip us frac rx bx
+	local ip us frac rx bx thr
 	if [[ $1 =~ $RE_REPLY ]]; then
 		ip=${BASH_REMATCH[1]}
 		frac="${BASH_REMATCH[3]}000"
@@ -180,7 +203,9 @@ handle_line() {
 		rx=$(( us * 1000 ))
 		bx=${BASELINE_X[$ip]:-$rx}
 		LAST_SAMPLE=$NOW; LAST_OK[$ip]=$NOW
-		if (( rx - bx > DELAY_THR_US * 1000 )); then
+		if (( DELAY_THR_PCT > 0 )); then thr=$(( bx * DELAY_THR_PCT / 100 ))
+		else thr=$(( DELAY_THR_US * 1000 )); fi
+		if (( ! IGNORE_DELAY && rx - bx > thr )); then
 			push_sample 1
 		else
 			push_sample 0
@@ -198,7 +223,7 @@ handle_line() {
 }
 
 write_status() {
-	printf 'updated=%s\nbloat_window=%s/%s\n' "${EPOCHREALTIME%.*}" "$BLOAT_CNT" "$BLOAT_WINDOW" > "$STATUS_FILE"
+	printf 'updated=%s profile=%s\nbloat_window=%s/%s\n' "${EPOCHREALTIME%.*}" "$PROFILE" "$BLOAT_CNT" "$BLOAT_WINDOW" > "$STATUS_FILE"
 	local d
 	for d in 0 1; do
 		printf '%s(%s): rate=%s good=%s throughput=%s load=%s%% base=%s max=%s cuts=%s kbit/s\n' \
@@ -261,7 +286,7 @@ PING_PID=$!
 now
 LAST_TICK=$NOW LAST_SAMPLE=$NOW LAST_APPLY=$NOW LAST_LOG=$NOW LOGGED_CUTS0=0 LOGGED_CUTS1=0
 for d in 0 1; do read_bytes "$d"; PREV_BYTES[d]=$REPLY; apply "$d" 1; done
-log "started: dl ${IFACE[0]} ${BASE[0]}..${MAX[0]} kbit, ul ${IFACE[1]} ${BASE[1]}..${MAX[1]} kbit"
+log "started ($PROFILE): dl ${IFACE[0]} ${BASE[0]}..${MAX[0]} kbit, ul ${IFACE[1]} ${BASE[1]}..${MAX[1]} kbit"
 
 while :; do
 	if read -r -t 1 -u "$PFD" line; then

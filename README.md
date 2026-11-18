@@ -14,6 +14,20 @@ How it differs from stock cake-autorate:
 | on bloat | cut to throughput × factor | same, and remembers 95% of it as learned-good |
 | both directions busy | cut both | only cut the one that was probing |
 
+## Profiles
+
+`PROFILE` in `config.sh` sets how much ping you trade for speed:
+
+| `PROFILE` | under load | floor | reacts to |
+|---|---|---|---|
+| `balanced` (default) | the knobs in `config.sh` (+15 ms RTT threshold) | `MIN_PCT` of plan | RTT rise or probe loss |
+| `throughput` | ping stays within ~1.5x idle ping | plan rate | RTT above baseline + `THROUGHPUT_DELAY_PCT`% (per reflector), or loss |
+| `extra` | ping ignored; runs at the ceiling when busy | plan rate | probe loss only (ISP buffer overflowing) |
+
+`throughput` and `extra` override `MIN_PCT`, the bloat threshold and the cut/probe knobs.
+For any other mix, stay on `balanced` and set the knobs yourself; `DELAY_THR_PCT`
+(relative threshold) and `IGNORE_DELAY=1` work there too.
+
 ## Deploy (over WireGuard)
 
 ```sh
